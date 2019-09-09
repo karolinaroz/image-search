@@ -1,0 +1,150 @@
+public class CustomSearchController {
+   
+    @AuraEnabled
+    public static List<SObjectResult> searchRecords(String searchText) {
+
+        Set<String> obNameSet = new Set<String>();
+        obNameSet.add('image');
+        
+        String fieldStr = '';
+        List<String> objNameList = new List<String>();
+        List<SObjectResult> SObjectResultList = new List<SObjectResult>();
+        Map<String, String> obFieldLabel = new Map<String, String>();
+        Integer counter= 0;
+        if(searchText.length() < 2){
+           return SObjectResultList; 
+        }
+        
+       
+        for(SobjectType objType : schema.getglobaldescribe().values()) {
+            if(objType.getdescribe().issearchable() && objType.getdescribe().isAccessible() && (objType.getdescribe().isCustom() || obNameSet.contains(String.valueof(objType).toLowerCase())) ) {
+                for(Schema.SObjectField dsr : objType.getdescribe().fields.getMap().values()) {
+                    if(dsr.getdescribe().isNameField()) {
+                        fieldStr = fieldStr+','+(String.valueof(objType))+'(Id,' + String.valueof(dsr)+')';
+                        objNameList.add(String.valueof(objType));
+                        obFieldLabel.put(String.valueof(objType), objType.getDescribe().getLabel()+'#'+dsr);
+                        break;
+                    }
+                }
+            }
+        }
+        
+        String objName = fieldStr.removeStartIgnoreCase(',');
+        List<List <sObject>> sobList =  search.query('find \'' + searchText + '*\' in all fields returning '+objName);
+       
+        
+        for(Integer count = 0; count<objNameList.size(); count++ )
+            if(sobList[count].size() > 0)
+                SObjectResultList.add( new SObjectResult( objNameList[count], sobList[count], obFieldLabel.get(objNameList[count]).split('#')[0], obFieldLabel.get(objNameList[count]).split('#')[1]));
+        
+        return SObjectResultList;
+        
+    }
+    
+    
+    
+    public class SObjectResult {
+        @AuraEnabled
+        public String objName;
+        @AuraEnabled
+        public String objLabel;
+        @AuraEnabled
+        public String fieldName;
+        @AuraEnabled
+        public List<sObject> soList;
+        
+        public SObJectResult(String objNameTemp, List<sObject> soLisTemp,String objLabelTemp,String fieldNameTemp) {
+            objName = objNameTemp;
+            soList = soLisTemp;
+            objLabel = objLabelTemp;
+            fieldName = fieldNameTemp;
+        }
+    }
+    
+    
+
+    @AuraEnabled
+    public static List<Invoice> searchAllImages() {
+        
+        Http http = new Http();
+        HttpRequest request = new HttpRequest();
+        request.setEndpoint('https://jsonplaceholder.typicode.com/photos');
+        request.setMethod('GET');
+        HttpResponse response = http.send(request);
+        
+        if (response.getStatusCode() == 200) {
+            
+            String result = response.getBody();
+           
+            List<Invoice> listOfInvoice = new List<Invoice>();
+            List<Image__c> listToInsert = new List<Image__c>();
+        
+            JSONParser parser4 = JSON.createParser(response.getBody());
+            while (parser4.nextToken() != null) {
+                if (parser4.getCurrentToken() == JSONToken.START_ARRAY) {
+                    while (parser4.nextToken() != null) {
+                        if (parser4.getCurrentToken() == JSONToken.START_OBJECT) {
+                            
+                            Invoice inv = (Invoice)parser4.readValueAs(Invoice.class);
+                            listOfInvoice.add(inv);
+                   
+                            	Image__c currentImage = new Image__c();
+                            	currentImage.current_id__c = inv.id;
+                            	currentImage.imgUrl__c = inv.url;
+                            	currentImage.thumbnailUrl__c = inv.thumbnailUrl;
+                                currentImage.albumId__c = inv.albumId;
+                            	currentImage.Name = inv.title;
+                            	listToInsert.add(currentImage);
+
+                            parser4.skipChildren();
+                            
+                        }
+                    }
+                }
+                insertValues(listToInsert);
+            }
+            return listOfInvoice;
+        }
+        return null;
+    }
+    
+   
+    public static void insertValues(List<Image__c> toInsertImgList){
+        
+        Savepoint sp = Database.setSavepoint( );
+        try
+        {
+            upsert toInsertImgList;
+
+        } catch ( Exception ex )
+        {
+            Database.rollback( sp );
+            System.debug(Logginglevel.ERROR, '### Database error: ' + ex.getMessage( )+ ' stack trace: ' + ex.getStackTraceString());
+        }
+    }
+    
+    
+    public class Invoice {
+    @AuraEnabled
+    public Integer albumId;
+    @AuraEnabled
+    public Integer id;
+    @AuraEnabled
+    public String title;
+    @AuraEnabled
+    public String url;
+    @AuraEnabled
+    public String thumbnailUrl;
+    
+    public Invoice(Integer albId, Integer phoId, String phoTitle, String phoUrl, String thumbUrl) {
+        albumId = albId;
+        id = phoId;
+        title = phoTitle;
+        url = phoUrl;
+        thumbnailUrl = thumbUrl;
+    	}
+	}  
+    
+    
+    
+}
